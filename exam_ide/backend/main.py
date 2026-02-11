@@ -17,8 +17,12 @@ class Room(BaseModel):
     room_name: str
     teacher_name: str
     language: str
+    duration_minutes: int
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     students: List[str] = []
     student_names: Dict[str, str] = {}  # NEW: Map student_id to student_name
+    student_red_flags: Dict[str, int] = {} # NEW: Track violations
     questions: List[Dict] = []
     status: str = "active"
 
@@ -58,9 +62,24 @@ class Database:
         self.sessions = {}
         self.student_names = {}  # NEW: Track student names globally
 
-    def create_room(self, room_name: str, teacher_name: str, language: str) -> Room:
+    def create_room(self, room_name: str, teacher_name: str, language: str, duration_minutes: int, start_time: Optional[str] = None) -> Room:
         room_id = str(uuid.uuid4())
         room_code = str(uuid.uuid4())[:6].upper()
+
+        # Calculate end time if start time is provided
+        end_time = None
+        if start_time and duration_minutes:
+            try:
+                start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                # Add duration
+                # For simplicity, we'll store as string
+                # In a real app, use proper datetime handling
+                pass
+            except:
+                pass
+        
+        # We will handle the time calculation in the API endpoint or frontend for simplicity
+        # But here we just store what we get
 
         room = Room(
             room_id=room_id,
@@ -68,8 +87,12 @@ class Database:
             room_name=room_name,
             teacher_name=teacher_name,
             language=language,
+            duration_minutes=duration_minutes,
+            start_time=start_time,
+            end_time=None, # Will be set by caller or logic
             students=[],
             student_names={},
+            student_red_flags={},
             questions=[]
         )
 
@@ -196,6 +219,7 @@ class Database:
                 if latest_ws:
                     student_codes[student_id] = {
                         "student_name": student_name,  # NEW: Include student name
+                        "red_flags": room.student_red_flags.get(student_id, 0), # NEW: Include violations
                         "code": latest_ws.get("code", ""),
                         "language": latest_ws.get("language", "python"),
                         "status": latest_ws.get("status", "working"),
@@ -206,6 +230,7 @@ class Database:
                 # Student hasn't written any code yet
                 student_codes[student_id] = {
                     "student_name": student_name,  # NEW: Include student name
+                    "red_flags": room.student_red_flags.get(student_id, 0), # NEW: Include violations
                     "code": "",
                     "language": "python",
                     "status": "idle",
@@ -221,6 +246,16 @@ class Database:
 # ============================================================================
 
 app = FastAPI(title="Online Exam IDE API")
+
+# Add CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for simplicity (or specify Streamlit URL)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 db = Database()
 code_executor = CodeExecutor()
 
@@ -250,18 +285,63 @@ async def health_check():
 @app.post("/api/rooms/create")
 async def create_room(data: dict):
     """Create a new exam room"""
+    room_name = data.get("room_name")
+    teacher_name = data.get("teacher_name")
+    language = data.get("language", "Python")
+    duration_minutes = int(data.get("duration", 30))
+    start_time = data.get("start_time") # ISO String
+
+    # Calculate end time
+    end_time = None
+    if start_time:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace('Z', ''))
+            from datetime import timedelta
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            end_time = end_dt.isoformat()
+        except Exception as e:
+            print(f"Error parsing time: {e}")
+
     room = db.create_room(
-        room_name=data.get("room_name"),
-        teacher_name=data.get("teacher_name"),
-        language=data.get("language", "Python")
+        room_name=room_name,
+        teacher_name=teacher_name,
+        language=language,
+        duration_minutes=duration_minutes,
+        start_time=start_time
     )
+    
+    # Manually set end_time since create_room didn't have it in signature to keep it simple
+    room.end_time = end_time
 
     return {
         "room_id": room.room_id,
         "room_code": room.room_code,
         "room_name": room.room_name,
-        "teacher_name": room.teacher_name
+        "teacher_name": room.teacher_name,
+        "duration_minutes": room.duration_minutes,
+        "start_time": room.start_time,
+        "end_time": room.end_time
     }
+
+
+@app.post("/api/rooms/{room_id}/report_violation")
+async def report_violation(room_id: str, data: dict):
+    """Report a student violation (tab switch, etc.)"""
+    print(f"DEBUG: Received violation report for room {room_id}: {data}") # Debug log
+    student_id = data.get("student_id")
+    room = db.get_room(room_id)
+    
+    if not room:
+        print(f"DEBUG: Room {room_id} not found")
+        raise HTTPException(status_code=404, detail="Room not found")
+        
+    if student_id:
+        current_flags = room.student_red_flags.get(student_id, 0)
+        room.student_red_flags[student_id] = current_flags + 1
+        print(f"DEBUG: Updated flags for {student_id}: {current_flags + 1}")
+        return {"success": True, "new_count": current_flags + 1}
+    
+    return {"success": False}
 
 
 @app.get("/api/rooms/{room_id}")
@@ -279,7 +359,10 @@ async def get_room(room_id: str):
         "students": room.students,
         "student_names": room.student_names,  # NEW: Return student names mapping
         "questions": room.questions,
-        "language": room.language
+        "language": room.language,
+        "duration_minutes": room.duration_minutes,
+        "start_time": room.start_time,
+        "end_time": room.end_time
     }
 
 

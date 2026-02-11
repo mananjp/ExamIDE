@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import json
 from datetime import datetime
@@ -133,16 +134,21 @@ class APIClient:
         self.session_id = None
         self.role = None
 
-    def create_room(self, room_name: str, teacher_name: str, language: str = "Python"):
+    def create_room(self, room_name: str, teacher_name: str, language: str = "Python", duration: int = 30, start_time: str = None):
         """Create a new exam room"""
+        payload = {
+            "room_name": room_name,
+            "teacher_name": teacher_name,
+            "language": language,
+            "duration": duration,
+            "session_id": self.session_id
+        }
+        if start_time:
+            payload["start_time"] = start_time
+
         response = requests.post(
             f"{self.base_url}/api/rooms/create",
-            json={
-                "room_name": room_name,
-                "teacher_name": teacher_name,
-                "language": language,
-                "session_id": self.session_id
-            }
+            json=payload
         )
         return response.json()
 
@@ -208,6 +214,16 @@ class APIClient:
         """Get all student codes with NAMES in the room (STEP 3 - Live Monitor)"""
         response = requests.get(f"{self.base_url}/api/rooms/{room_id}/student-codes")
         return response.json()
+        
+    def report_violation(self, room_id: str, student_id: str):
+        """Report a security violation"""
+        try:
+            requests.post(
+                f"{self.base_url}/api/rooms/{room_id}/report_violation",
+                json={"student_id": student_id}
+            )
+        except:
+            pass
 
 
 # ============================================================================
@@ -224,10 +240,27 @@ def teacher_page(api_client):
         room_name = st.text_input("Exam/Assignment Name")
         teacher_name = st.text_input("Your Name")
         language = st.selectbox("Programming Language", ["Python", "JavaScript", "Java", "C++"])
+        
+        # New: Duration and Start Time
+        duration = st.slider("Duration (minutes)", 5, 180, 60, step=5)
+        
+        start_option = st.radio("Start Time", ["Start Now", "Schedule for Later"])
+        start_time_iso = None
+        
+        if start_option == "Schedule for Later":
+            exam_date = st.date_input("Exam Date", min_value=datetime.now().date())
+            exam_time = st.time_input("Exam Time", value=datetime.now().time())
+            if exam_date and exam_time:
+                # Combine date and time
+                start_dt = datetime.combine(exam_date, exam_time)
+                start_time_iso = start_dt.isoformat()
+        else:
+            # Start now
+            start_time_iso = datetime.now().isoformat()
 
         if st.button("Create Exam Room", key="create_room"):
             if room_name and teacher_name:
-                result = api_client.create_room(room_name, teacher_name, language)
+                result = api_client.create_room(room_name, teacher_name, language, duration, start_time_iso)
                 if "room_id" in result:
                     st.session_state.room_id = result["room_id"]
                     st.session_state.room_code = result["room_code"]
@@ -286,6 +319,59 @@ def teacher_page(api_client):
 
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
+            st.subheader("👁️ Live Code Monitor")
+
+        # ====================================================================
+        # NEW: CLASSROOM STATUS TABLE
+        # ====================================================================
+        try:
+            detailed_data = api_client.get_student_codes(st.session_state.room_id)
+            student_codes_map = detailed_data.get("student_codes", {})
+            student_ids_list = room.get("students", [])
+            
+            if student_ids_list:
+                status_data = []
+                for sid in student_ids_list:
+                    s_info = student_codes_map.get(sid, {})
+                    nm = room.get("student_names", {}).get(sid, "Unknown")
+                    flgs = s_info.get("red_flags", 0)
+                    sts = s_info.get("status", "idle")
+                    last_up = s_info.get("last_updated", "")
+                    if last_up:
+                        last_up = last_up.split("T")[1][:8]
+                    
+                    status_icon = "🟢" if sts == "working" else "⚪"
+                    flag_icon = "🚩" if flgs > 0 else "✅"
+                    
+                    status_data.append({
+                        "Student Name": nm,
+                        "Status": f"{status_icon} {sts}",
+                        "Violations": f"{flag_icon} {flgs}",
+                        "Last Active": last_up,
+                        "ID": sid
+                    })
+                
+                st.info("📋 **Classroom Overview**")
+                st.dataframe(
+                    status_data, 
+                    column_config={
+                        "Student Name": st.column_config.TextColumn("Student Name", width="medium"),
+                        "Status": st.column_config.TextColumn("Status", width="small"),
+                        "Violations": st.column_config.TextColumn("Violations (Red Flags)", width="small"),
+                        "Last Active": st.column_config.TextColumn("Last Active", width="small"),
+                        "ID": st.column_config.TextColumn("Student ID", width="small")
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.warning("Waiting for students to join...")
+                
+        except Exception as ex:
+            st.error(f"Error loading classroom status: {ex}")
+
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
             # Get student names from room
             room = api_client.get_room(st.session_state.room_id)
             student_names_map = room.get("student_names", {})
@@ -293,9 +379,25 @@ def teacher_page(api_client):
 
             # Create a list of student display names
             student_display = []
+            
+            # Use `student_codes_response` (need to fetch if not available, OR rely on step 3 structure)
+            # Actually, `room` object doesn't have red_flags. We need `get_student_codes` to get red flags.
+            # Let's fetch the detailed codes to populate the dropdown info.
+            try:
+                detailed_data = api_client.get_student_codes(st.session_state.room_id)
+                student_codes_map = detailed_data.get("student_codes", {})
+            except:
+                student_codes_map = {}
+
             for sid in student_ids:
                 name = student_names_map.get(sid, f"Student ({sid[:8]}...)")
-                student_display.append({"id": sid, "name": name})
+                s_data = student_codes_map.get(sid, {})
+                flags = s_data.get("red_flags", 0)
+                
+                flag_str = f" 🚩({flags})" if flags > 0 else ""
+                display_name = f"{name}{flag_str}"
+                
+                student_display.append({"id": sid, "name": display_name})
 
             if student_display:
                 selected_idx = st.selectbox(
@@ -340,9 +442,14 @@ def teacher_page(api_client):
                         language = student_data.get("language", "python").lower()
                         status = student_data.get("status", "idle")
                         last_updated = student_data.get("last_updated", "")
+                        red_flags = student_data.get("red_flags", 0)
 
                         # Display code with syntax highlighting
                         with code_placeholder.container():
+                            # Show RED FLAGS warning if any
+                            if red_flags > 0:
+                                st.error(f"🚨 **VIOLATION ALERT**: This student has left the exam window {red_flags} times!")
+
                             if code.strip():
                                 st.code(code, language=language)
                             else:
@@ -407,6 +514,223 @@ def student_page(api_client):
 
     if "room_id" in st.session_state:
         st.info(f"✅ Connected as **{st.session_state.student_name}**")
+
+        # Get room details to check timing
+        try:
+            room = api_client.get_room(st.session_state.room_id)
+            start_time_str = room.get("start_time")
+            end_time_str = room.get("end_time")
+            
+            # Parse times
+            now = datetime.now()
+            start_time = datetime.fromisoformat(start_time_str) if start_time_str else None
+            end_time = datetime.fromisoformat(end_time_str) if end_time_str else None
+            
+            # Check if exam has started
+            if start_time and now < start_time:
+                st.warning(f"Exam has not started yet. Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # Countdown
+                time_diff = start_time - now
+                st.metric("Time until start", str(time_diff).split('.')[0])
+                
+                if st.button("Refresh Status"):
+                    st.rerun()
+                return # Stop execution given exam hasn't started
+            
+            # Check if exam has ended
+            if end_time and now > end_time:
+                st.error("Exam has ended. You can no longer submit code.")
+                st.metric("Exam Ended", end_time.strftime('%Y-%m-%d %H:%M:%S'))
+                return # Stop execution given exam is over
+
+            # EXAM IN PROGRESS
+            if end_time:
+                time_left = end_time - now
+                
+                # Security and Fullscreen Script
+                # Security and Fullscreen Script
+                # We use components.html to inject script, likely running in an iframe.
+                # We must access window.parent to affect the main app.
+                
+                # Expose IDs for JS to trigger Python
+                st_room_id = st.session_state.room_id
+                st_student_id = st.session_state.student_id
+                
+                security_script = f"""
+                <script>
+                const targetWindow = window.parent;
+                const targetDocument = targetWindow.document;
+                
+                // Backend reporting function
+                function reportViolation() {{
+                    fetch("{BACKEND_URL}/api/rooms/{st_room_id}/report_violation", {{
+                        method: "POST",
+                        headers: {{
+                            "Content-Type": "application/json"
+                        }},
+                        body: JSON.stringify({{
+                            "student_id": "{st_student_id}"
+                        }})
+                    }}).catch(e => console.error(e));
+                }}
+
+                function requestFullScreen() {{
+                    var elem = targetDocument.documentElement;
+                    if (elem.requestFullscreen) {{
+                        elem.requestFullscreen().catch(err => {{
+                            console.log("Error attempting to enable full-screen mode: " + err.message);
+                        }});
+                    }} else if (elem.webkitRequestFullscreen) {{
+                        elem.webkitRequestFullscreen();
+                    }} else if (elem.msRequestFullscreen) {{
+                        elem.msRequestFullscreen();
+                    }}
+                }}
+                
+                function showOverlay(message, isRed = true) {{
+                    var overlay = targetDocument.getElementById('security-overlay');
+                    if (!overlay) {{
+                        overlay = targetDocument.createElement('div');
+                        overlay.id = 'security-overlay';
+                        overlay.style.position = 'fixed';
+                        overlay.style.top = '0';
+                        overlay.style.left = '0';
+                        overlay.style.width = '100vw'; // Ensure full coverage
+                        overlay.style.height = '100vh';
+                        overlay.style.zIndex = '999999';
+                        overlay.style.color = 'white';
+                        overlay.style.display = 'flex';
+                        overlay.style.justifyContent = 'center';
+                        overlay.style.alignItems = 'center';
+                        overlay.style.flexDirection = 'column';
+                        
+                        overlay.onclick = function() {{
+                            overlay.style.display = 'none';
+                            targetDocument.title = "Online Exam IDE";
+                            requestFullScreen();
+                        }};
+                        
+                        targetDocument.body.appendChild(overlay);
+                    }}
+                    
+                    overlay.style.backgroundColor = isRed ? 'rgba(255, 0, 0, 0.98)' : 'rgba(0, 0, 0, 0.9)';
+                    overlay.innerHTML = message;
+                    overlay.style.display = 'flex';
+                }}
+
+                // 1. Block Context Menu (Captured)
+                targetDocument.addEventListener('contextmenu', event => {{
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return false;
+                }}, true);
+                
+                // 2. Block Keyboard Shortcuts (Captured)
+                targetDocument.addEventListener('keydown', function(e) {{
+                    // Block Ctrl, Alt, Meta (Cmd) combinations
+                    if (e.ctrlKey || e.altKey || e.metaKey) {{
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return false;
+                    }}
+                    // Block F-keys (F1-F12)
+                    if (e.keyCode >= 112 && e.keyCode <= 123) {{
+                         e.preventDefault();
+                         e.stopPropagation();
+                         return false;
+                    }}
+                    // Capture Escape mainly for logging, browser will still exit fullscreen
+                    if (e.key === "Escape") {{
+                        // We can't stop the browser from exiting fullscreen, 
+                        // but we can catch the 'fullscreenchange' event below.
+                    }}
+                }}, true);
+
+                // 3. Block Copy/Cut/Paste (Captured) on the document
+                ['copy', 'cut', 'paste'].forEach(e => {{
+                    targetDocument.addEventListener(e, function(event) {{
+                        event.preventDefault();
+                        event.stopPropagation();
+                        return false;
+                    }}, true);
+                }});
+                
+                // 4. Tab Switching / Focus Loss Detection
+                targetWindow.addEventListener('blur', function() {{
+                   targetDocument.title = "⚠️ EXAM WARNING: COME BACK!";
+                   reportViolation();
+                   showOverlay('<h1 style="font-size: 50px;">⚠️ VIOLATION</h1><h2 style="font-size: 30px;">You left the exam window!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+                }});
+                
+                // 5. Fullscreen Exit Detection (The fix for ESC)
+                function handleFullscreenChange() {{
+                    if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
+                        // User exited fullscreen (e.g., pressed ESC)
+                        reportViolation(); // Count as violation
+                        showOverlay('<h1 style="font-size: 40px;">⚠️ FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
+                    }}
+                }}
+                
+                targetDocument.addEventListener('fullscreenchange', handleFullscreenChange);
+                targetDocument.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+                targetDocument.addEventListener('mozfullscreenchange', handleFullscreenChange);
+                targetDocument.addEventListener('MSFullscreenChange', handleFullscreenChange);
+                
+                // Css hiding
+                const style = targetDocument.createElement('style');
+                style.innerHTML = `
+                    [data-testid="stSidebar"] {{ display: none !important; }}
+                    [data-testid="stToolbar"] {{ visibility: hidden !important; }}
+                    header {{ visibility: hidden !important; }}
+                `;
+                targetDocument.head.appendChild(style);
+                
+                // Periodic check for fullscreen (Brute Force)
+                setInterval(function() {{
+                     if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
+                         // If not in fullscreen, force the overlay!
+                         // We don't increment violation count every second to avoid spamming server
+                         // But we show the overlay to block them.
+                         var overlay = targetDocument.getElementById('security-overlay');
+                         if (!overlay || overlay.style.display == 'none') {{
+                             showOverlay('<h1 style="font-size: 40px;">⚠️ FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
+                         }}
+                     }}
+                }}, 1000);
+                
+                // Trigger immediately
+                setTimeout(requestFullScreen, 500);
+                console.log("Security script loaded and attached to parent");
+                </script>
+                """
+                # Use components.html to inject logic that reaches out to parent
+                components.html(security_script, height=0, width=0)
+                
+                # Top bar
+                col1, col2, col3 = st.columns([1, 1, 1])
+                with col1:
+                    st.metric("⏳ Time Remaining", str(time_left).split('.')[0])
+                with col3:
+                   # Fullscreen button as backup
+                   st.markdown("""
+                    <button onclick="parent.document.documentElement.requestFullscreen()" style="
+                        background-color: #FF4B4B; 
+                        color: white; 
+                        padding: 10px 20px; 
+                        border: none; 
+                        border-radius: 5px; 
+                        cursor: pointer;
+                        font-weight: bold;">
+                        ⛶ Force Full Screen
+                    </button>
+                    """, unsafe_allow_html=True)
+                
+                if st.button("Refresh Timer"):
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"Error checking exam status: {e}")
 
         # Get questions
         try:

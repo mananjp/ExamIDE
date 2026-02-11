@@ -7,6 +7,9 @@ class Room(BaseModel):
     room_name: str
     teacher_name: str
     language: str
+    duration_minutes: int
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     students: List[str] = []
     questions: List[dict] = []
     status: str = "active"
