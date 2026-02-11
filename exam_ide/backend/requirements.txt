@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-websockets
-python-dotenv
-pydantic
-sqlalchemy
-aiofiles
-requests
-python-multipart
