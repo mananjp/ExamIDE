@@ -1236,64 +1236,64 @@ def main():
         <style>
         /* Global Background and Text */
         .stApp {
-            background-color: #0d1117;
-            background-image: radial-gradient(circle at 15% 50%, rgba(60, 30, 90, 0.25) 0%, transparent 50%), 
-                              radial-gradient(circle at 85% 30%, rgba(20, 60, 100, 0.25) 0%, transparent 50%);
-            color: #e6edf3;
+            background-color: #181d27;
+            background-image: radial-gradient(circle at 15% 50%, rgba(80, 50, 120, 0.35) 0%, transparent 55%), 
+                              radial-gradient(circle at 85% 30%, rgba(40, 90, 140, 0.35) 0%, transparent 55%);
+            color: #ffffff;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
         
         /* Sidebar */
         [data-testid="stSidebar"] {
-            background-color: rgba(22, 27, 34, 0.6) !important;
-            backdrop-filter: blur(12px);
-            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            background-color: rgba(30, 36, 46, 0.75) !important;
+            backdrop-filter: blur(14px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
         }
         
         /* Buttons */
         .stButton>button {
             background-color: #238636;
-            color: white;
-            border: 1px solid rgba(240, 246, 252, 0.1);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 8px;
             transition: all 0.2s ease-in-out;
             font-weight: 600;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
         }
         .stButton>button:hover {
             background-color: #2ea043;
             color: white;
-            border-color: rgba(240, 246, 252, 0.2);
-            box-shadow: 0 4px 12px rgba(46, 160, 67, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 12px rgba(46, 160, 67, 0.5);
             transform: translateY(-1px);
         }
         .stButton>button[kind="secondary"] {
-            background-color: #21262d;
-            border: 1px solid rgba(240, 246, 252, 0.1);
+            background-color: #2a313c;
+            border: 1px solid rgba(255, 255, 255, 0.15);
         }
         .stButton>button[kind="secondary"]:hover {
-            background-color: #30363d;
+            background-color: #3b4554;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         
         /* Metrics / Cards */
         [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
-            color: #e6edf3 !important;
+            color: #ffffff !important;
         }
         div[data-testid="metric-container"] {
-            background-color: rgba(22, 27, 34, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background-color: rgba(30, 36, 46, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 12px;
             padding: 16px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            backdrop-filter: blur(10px);
         }
         
         /* Inputs & Editors */
         .stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div>select {
-            background-color: #010409 !important;
-            color: #c9d1d9 !important;
-            border: 1px solid #30363d !important;
+            background-color: #11151c !important;
+            color: #ffffff !important;
+            border: 1px solid #3b4554 !important;
             border-radius: 6px !important;
         }
         .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
@@ -1303,15 +1303,21 @@ def main():
         
         /* Expanders */
         .streamlit-expanderHeader {
-            background-color: #161b22;
+            background-color: #212833;
             border-radius: 8px;
-            border: 1px solid #30363d;
+            border: 1px solid #3b4554;
+            color: #ffffff !important;
         }
         
         /* Headers & Typography */
-        h1, h2, h3 {
+        h1, h2, h3, h4, h5, h6 {
+            color: #ffffff !important;
             font-weight: 700 !important;
             letter-spacing: -0.02em;
+        }
+        
+        p, span, div {
+            color: #e2e8f0;
         }
         
         /* Main structural cleanups */
