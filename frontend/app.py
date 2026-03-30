@@ -1231,6 +1231,102 @@ def main():
         layout="wide"
     )
 
+    # Apply Modern CSS Styling
+    st.markdown("""
+        <style>
+        /* Global Background and Text */
+        .stApp {
+            background-color: #0d1117;
+            background-image: radial-gradient(circle at 15% 50%, rgba(60, 30, 90, 0.25) 0%, transparent 50%), 
+                              radial-gradient(circle at 85% 30%, rgba(20, 60, 100, 0.25) 0%, transparent 50%);
+            color: #e6edf3;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        /* Sidebar */
+        [data-testid="stSidebar"] {
+            background-color: rgba(22, 27, 34, 0.6) !important;
+            backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        /* Buttons */
+        .stButton>button {
+            background-color: #238636;
+            color: white;
+            border: 1px solid rgba(240, 246, 252, 0.1);
+            border-radius: 8px;
+            transition: all 0.2s ease-in-out;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .stButton>button:hover {
+            background-color: #2ea043;
+            color: white;
+            border-color: rgba(240, 246, 252, 0.2);
+            box-shadow: 0 4px 12px rgba(46, 160, 67, 0.4);
+            transform: translateY(-1px);
+        }
+        .stButton>button[kind="secondary"] {
+            background-color: #21262d;
+            border: 1px solid rgba(240, 246, 252, 0.1);
+        }
+        .stButton>button[kind="secondary"]:hover {
+            background-color: #30363d;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Metrics / Cards */
+        [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
+            color: #e6edf3 !important;
+        }
+        div[data-testid="metric-container"] {
+            background-color: rgba(22, 27, 34, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(8px);
+        }
+        
+        /* Inputs & Editors */
+        .stTextInput>div>div>input, .stTextArea>div>div>textarea, .stSelectbox>div>div>select {
+            background-color: #010409 !important;
+            color: #c9d1d9 !important;
+            border: 1px solid #30363d !important;
+            border-radius: 6px !important;
+        }
+        .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
+            border-color: #58a6ff !important;
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3) !important;
+        }
+        
+        /* Expanders */
+        .streamlit-expanderHeader {
+            background-color: #161b22;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+        }
+        
+        /* Headers & Typography */
+        h1, h2, h3 {
+            font-weight: 700 !important;
+            letter-spacing: -0.02em;
+        }
+        
+        /* Main structural cleanups */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {background-color: transparent !important;}
+        
+        /* Alerts */
+        .stAlert {
+            border-radius: 8px;
+            border: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     # Initialize session state
     if "role" not in st.session_state:
         st.session_state.role = None
