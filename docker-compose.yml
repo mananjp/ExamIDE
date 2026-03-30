@@ -1,0 +1,57 @@
+# ============================================================================
+# Online Exam IDE — Docker Compose
+# ============================================================================
+# 
+# IMPORTANT (MongoDB Atlas IP Whitelisting):
+#   MongoDB Atlas requires your IP address to be whitelisted before allowing
+#   connections. When running in Docker (locally or on a server), you must:
+#   
+#   1. Go to MongoDB Atlas → Network Access → Add IP Address
+#   2. Either add your server/host IP, OR use 0.0.0.0/0 to allow all IPs
+#      (suitable for development; restrict in production)
+#   3. The backend container uses certifi for TLS and dnspython for SRV
+#      record resolution, so Atlas SRV connection strings work correctly.
+#
+# Usage:
+#   docker-compose up --build        # Build and start
+#   docker-compose up -d             # Detached mode
+#   docker-compose down              # Stop and remove
+#   docker-compose logs -f backend   # Follow backend logs
+#
+# Access:
+#   Frontend:  http://localhost:8501
+#   Backend:   http://localhost:8000
+#   API Docs:  http://localhost:8000/docs
+# ============================================================================
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: exam-ide-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: exam-ide-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

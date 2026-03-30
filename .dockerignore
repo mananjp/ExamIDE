@@ -1,0 +1,33 @@
+# Virtual environments
+.venv
+venv
+.env.local
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.idea
+.vscode
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Logs and temp files
+*.log
+conn_test_log.txt
+conn_test_log_2.txt
+connection_test_output.txt
+
+# Docs (not needed in container)
+docs/
+
+# OS files
+Thumbs.db
+.DS_Store
