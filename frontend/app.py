@@ -122,7 +122,11 @@ for (let num of numbers) {
 # CONFIGURATION
 # ============================================================================
 
+# The URL used by Streamlit (server) to contact FastAPI (server)
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+# The URL used by the browser (client JS) to contact FastAPI
+PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
 
 
 # ============================================================================
@@ -760,7 +764,7 @@ def student_page(api_client):
                 const targetDocument = targetWindow.document;
 
                 function reportViolation() {{
-                    fetch("{BACKEND_URL}/api/rooms/{st_room_id}/report_violation", {{
+                    fetch("{PUBLIC_BACKEND_URL}/api/rooms/{st_room_id}/report_violation", {{
                         method: "POST",
                         headers: {{
                             "Content-Type": "application/json"
