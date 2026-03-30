@@ -1,5 +1,5 @@
 # Backend API URL (change for production)
-BACKEND_URL = "http://localhost:8000"  # Local dev
+BACKEND_URL = "examide-backend-production.up.railway.app"  # Local dev
 
 # Supported languages
 SUPPORTED_LANGUAGES = {
