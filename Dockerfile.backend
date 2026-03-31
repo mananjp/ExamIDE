@@ -43,4 +43,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request, os; port=os.environ.get('PORT', '8000'); urllib.request.urlopen(f'http://127.0.0.1:{port}/health')" || exit 1
 
 # Run the application using the dynamic PORT provided by the platform (e.g. Railway)
-CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Use :: to listen on all interfaces (IPv4 + IPv6) — Railway routes via IPv6 internally
+CMD sh -c "uvicorn main:app --host :: --port ${PORT:-8000}"
