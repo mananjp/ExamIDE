@@ -123,10 +123,10 @@ for (let num of numbers) {
 # ============================================================================
 
 # The URL used by Streamlit (server) to contact FastAPI (server)
-BACKEND_URL = os.getenv("BACKEND_URL", "https://examide-backend-production.up.railway.app")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
-# The URL used by the browser (client JS) to contact FastAPI
-PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "https://examide-backend-production.up.railway.app")
+# The URL used by the browser (client JS) to contact the unified Nginx proxy
+PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "")
 
 
 # ============================================================================
