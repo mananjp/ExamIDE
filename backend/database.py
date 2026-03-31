@@ -103,6 +103,24 @@ class Database:
                 await self.expire_room(room["room_id"])
             return {"error": "expired", "detail": "This exam has ended. Room code is no longer valid."}
 
+        # Security: reject joins if exam has already started
+        start_time_str = room.get("start_time")
+        if start_time_str:
+            try:
+                start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                now = datetime.now(start_dt.tzinfo) if start_dt.tzinfo else datetime.now()
+                if now > start_dt:
+                    return {"error": "started", "detail": "Exam has already started. Late entries are not allowed."}
+            except Exception:
+                pass
+
+        # Integrity: ensure student name is unique within the room
+        student_name_lower = student_name.strip().lower()
+        existing_names = room.get("student_names", {})
+        for existing_id, existing_name in existing_names.items():
+            if existing_name.strip().lower() == student_name_lower:
+                return {"error": "name_taken", "detail": "Name already taken. Please use your full name or add an initial."}
+
         room_id = room["room_id"]
         student_id = str(uuid.uuid4())
         
