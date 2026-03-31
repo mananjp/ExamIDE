@@ -266,6 +266,14 @@ class APIClient:
         except:
             pass
 
+    def start_exam(self, room_id: str, start_time: str):
+        """Manually start an exam room"""
+        response = requests.post(
+            f"{self.base_url}/api/rooms/{room_id}/start",
+            json={"start_time": start_time}
+        )
+        return response.json()
+
 
 # ============================================================================
 # PAGE FUNCTIONS
@@ -282,21 +290,11 @@ def teacher_page(api_client):
         teacher_name = st.text_input("Your Name")
         language = st.selectbox("Programming Language", ["Python", "JavaScript", "Java", "C++"])
 
-        # Duration and Start Time
+        # Duration
         duration = st.slider("Duration (minutes)", 5, 180, 60, step=5)
 
-        start_option = st.radio("Start Time", ["Start in 10 Mins (Prep Time)", "Schedule for Later"])
+        # Do not set start time initially
         start_time_iso = None
-
-        if start_option == "Schedule for Later":
-            exam_date = st.date_input("Exam Date", min_value=datetime.now().date())
-            exam_time = st.time_input("Exam Time", value=datetime.now().time())
-            if exam_date and exam_time:
-                start_dt = datetime.combine(exam_date, exam_time)
-                start_time_iso = start_dt.isoformat()
-        else:
-            start_time_iso = (datetime.now() + timedelta(minutes=10)).isoformat()
-            st.caption("⏳ Gives you 10 minutes to enter questions while students wait in the lobby.")
 
         if st.button("Create Exam Room", key="create_room"):
             if room_name and teacher_name:
@@ -429,6 +427,36 @@ def teacher_page(api_client):
         try:
             room = api_client.get_room(st.session_state.room_id)
             room_status = room.get("status", "active")
+
+            if not room.get("start_time"):
+                st.markdown("---")
+                st.markdown("## 🚀 Exam Control Panel")
+                st.info("The exam has not been started yet. Students joining now will wait in a lobby.")
+                
+                panel_col1, panel_col2 = st.columns(2)
+                with panel_col1:
+                    st.markdown("#### ⚡️ Start Immediately")
+                    st.caption("Starts the timer now. Latecomers will have a strict **5-minute window** to join before the room is permanently locked.")
+                    if st.button("▶️ Start Exam Now", type="primary", use_container_width=True):
+                        # Use UTC for consistency or local datetime
+                        start_time_iso = datetime.now().isoformat()
+                        result = api_client.start_exam(st.session_state.room_id, start_time_iso)
+                        if "success" in result:
+                            st.success("✅ Exam Started!")
+                            st.rerun()
+                
+                with panel_col2:
+                    st.markdown("#### 📅 Schedule for Later")
+                    with st.expander("Set automated start time"):
+                        exam_date = st.date_input("Date", min_value=datetime.now().date(), key="sch_date")
+                        exam_time = st.time_input("Time", value=datetime.now().time(), key="sch_time")
+                        if st.button("⏰ Schedule Exam", use_container_width=True):
+                            start_dt = datetime.combine(exam_date, exam_time)
+                            result = api_client.start_exam(st.session_state.room_id, start_dt.isoformat())
+                            if "success" in result:
+                                st.success(f"✅ Scheduled!")
+                                st.rerun()
+                st.markdown("---")
 
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -740,6 +768,13 @@ def student_page(api_client):
         now = datetime.now()
         start_time = datetime.fromisoformat(start_time_str) if start_time_str else None
         end_time = datetime.fromisoformat(end_time_str) if end_time_str else None
+
+        if not start_time:
+            st.title("🕒 Waiting Lobby")
+            st.info("The teacher has not started this exam yet. Please wait here.")
+            if st.button("🔄 Check Status"):
+                st.rerun()
+            return
 
         if start_time and now < start_time:
             st.warning(f"Exam has not started yet. Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")

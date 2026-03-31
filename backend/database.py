@@ -63,6 +63,26 @@ class Database:
         room_doc.pop("_id", None)  # Remove Mongo ID
         return room_doc
 
+    async def start_exam(self, room_id: str, start_time: str, duration_minutes: int) -> bool:
+        """Start an exam by assigning a start_time and calculating end_time."""
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            end_time = end_dt.isoformat()
+        except Exception:
+            return False
+
+        result = await self.rooms_collection.update_one(
+            {"room_id": room_id},
+            {
+                "$set": {
+                    "start_time": start_time,
+                    "end_time": end_time
+                }
+            }
+        )
+        return result.modified_count > 0 or result.matched_count > 0
+
     async def get_room(self, room_id: str) -> Optional[dict]:
         room = await self.rooms_collection.find_one({"room_id": room_id}, {"_id": 0})
         return room

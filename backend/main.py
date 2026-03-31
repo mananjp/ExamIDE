@@ -103,6 +103,25 @@ async def create_room(data: dict):
         "end_time": room["end_time"]
     }
 
+@app.post("/api/rooms/{room_id}/start")
+async def start_exam(room_id: str, data: dict):
+    """Start an exam by setting the start time explicitly."""
+    room = await db.get_room(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+        
+    start_time = data.get("start_time")
+    if not start_time:
+        raise HTTPException(status_code=400, detail="start_time is required")
+        
+    duration = room.get("duration_minutes", 60)
+    success = await db.start_exam(room_id, start_time, duration)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to start exam")
+        
+    return {"success": True, "message": "Exam started"}
+
 
 @app.post("/api/rooms/{room_id}/report_violation")
 async def report_violation(room_id: str, data: dict):
