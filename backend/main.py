@@ -39,6 +39,9 @@ code_executor = CodeExecutor()
 # Max score per question (each question is worth this many points)
 MAX_SCORE_PER_QUESTION = 100
 
+# Violation threshold: if a student exceeds this many violations, they are blocked
+MAX_VIOLATIONS_ALLOWED = 3
+
 
 # ============================================================================
 # HELPER: Room expiry check
@@ -103,7 +106,7 @@ async def create_room(data: dict):
 
 @app.post("/api/rooms/{room_id}/report_violation")
 async def report_violation(room_id: str, data: dict):
-    """Report a student violation (tab switch, etc.)"""
+    """Report a student violation (tab switch, etc.). Auto-blocks after threshold."""
     student_id = data.get("student_id")
     
     room = await db.get_room(room_id)
@@ -116,7 +119,9 @@ async def report_violation(room_id: str, data: dict):
         new_flags = current_flags + 1
         await db.update_red_flags(room_id, student_id, new_flags)
         
-        return {"success": True, "new_count": new_flags}
+        blocked = new_flags > MAX_VIOLATIONS_ALLOWED
+        
+        return {"success": True, "new_count": new_flags, "blocked": blocked}
     
     return {"success": False}
 
@@ -134,6 +139,10 @@ async def get_room(room_id: str):
         await db.expire_room(room_id)
         status = "expired"
 
+    # Compute blocked students list
+    student_red_flags = room.get("student_red_flags", {})
+    blocked_students = [sid for sid, flags in student_red_flags.items() if flags > MAX_VIOLATIONS_ALLOWED]
+
     return {
         "room_id": room["room_id"],
         "room_code": room["room_code"],
@@ -146,7 +155,8 @@ async def get_room(room_id: str):
         "duration_minutes": room.get("duration_minutes"),
         "start_time": room.get("start_time"),
         "end_time": room.get("end_time"),
-        "student_red_flags": room.get("student_red_flags", {}),
+        "student_red_flags": student_red_flags,
+        "blocked_students": blocked_students,
         "status": status
     }
 
@@ -254,7 +264,7 @@ async def get_worksheet(room_id: str, student_id: str, question_id: str):
 
 @app.post("/api/worksheets/{worksheet_id}/save")
 async def save_worksheet(worksheet_id: str, data: dict):
-    """Save worksheet code. BLOCKED if room is expired."""
+    """Save worksheet code. BLOCKED if room is expired or student is blocked."""
     # Check if the worksheet's room is still active
     ws = await db.get_worksheet_by_id(worksheet_id)
     if not ws:
@@ -265,6 +275,13 @@ async def save_worksheet(worksheet_id: str, data: dict):
         if room.get("status") != "expired":
             await db.expire_room(room["room_id"])
         raise HTTPException(status_code=403, detail="Exam has ended. Cannot save code.")
+
+    # Check if student is blocked due to violations
+    if room:
+        student_id = ws.get("student_id")
+        student_flags = room.get("student_red_flags", {}).get(student_id, 0)
+        if student_flags > MAX_VIOLATIONS_ALLOWED:
+            raise HTTPException(status_code=403, detail="You have been blocked from this exam due to repeated violations. Your score is 0.")
 
     success = await db.save_worksheet(worksheet_id, data.get("code", ""))
 
@@ -321,6 +338,11 @@ async def submit_solution(data: dict):
         if room.get("status") != "expired":
             await db.expire_room(room_id)
         raise HTTPException(status_code=403, detail="Exam has ended. Cannot submit solutions.")
+
+    # Check if student is blocked due to violations
+    student_flags = room.get("student_red_flags", {}).get(student_id, 0)
+    if student_flags > MAX_VIOLATIONS_ALLOWED:
+        raise HTTPException(status_code=403, detail="You have been blocked from this exam due to repeated violations. Your score is 0.")
 
     # Get the question with ALL test cases (including hidden)
     question = await db.get_question(room_id, question_id)
@@ -433,10 +455,13 @@ async def get_room_scores(room_id: str):
 
     scores_data = []
     for sid in students:
+        is_blocked = student_red_flags.get(sid, 0) > MAX_VIOLATIONS_ALLOWED
+
         student_entry = {
             "student_id": sid,
             "student_name": student_names.get(sid, "Unknown"),
             "red_flags": student_red_flags.get(sid, 0),
+            "blocked": is_blocked,
             "questions": [],
             "total_score": 0,
             "max_total": len(questions) * MAX_SCORE_PER_QUESTION
@@ -459,6 +484,11 @@ async def get_room_scores(room_id: str):
                         status = "accepted"
                     elif status != "accepted":
                         status = "attempted"
+
+            # Override scores to 0 if student is blocked
+            if is_blocked:
+                best_score = 0
+                status = "blocked"
 
             student_entry["questions"].append({
                 "question_id": qid,

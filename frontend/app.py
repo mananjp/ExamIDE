@@ -696,8 +696,7 @@ def teacher_page(api_client):
 
 
 def student_page(api_client):
-    """Student workspace"""
-    st.title("💻 Student Workspace")
+    """Student workspace — LeetCode / HackerRank style split-pane layout"""
 
     # Sidebar for room joining
     with st.sidebar:
@@ -722,259 +721,405 @@ def student_page(api_client):
                     else:
                         st.error(f"Error: {e}")
                 except Exception as e:
-                    # The API might return 403 as JSON
                     st.error(f"Error: {e}")
 
-    if "room_id" in st.session_state:
-        st.info(f"✅ Connected as **{st.session_state.student_name}**")
+    if "room_id" not in st.session_state:
+        st.title("💻 Online Exam IDE")
+        st.info("📌 Join a room using the sidebar to get started!")
+        return
 
-        # Get room details to check timing
-        try:
-            room = api_client.get_room(st.session_state.room_id)
-            start_time_str = room.get("start_time")
-            end_time_str = room.get("end_time")
+    # ================================================================
+    # ROOM & TIMING CHECKS
+    # ================================================================
+    try:
+        room = api_client.get_room(st.session_state.room_id)
+        start_time_str = room.get("start_time")
+        end_time_str = room.get("end_time")
 
-            now = datetime.now()
-            start_time = datetime.fromisoformat(start_time_str) if start_time_str else None
-            end_time = datetime.fromisoformat(end_time_str) if end_time_str else None
+        now = datetime.now()
+        start_time = datetime.fromisoformat(start_time_str) if start_time_str else None
+        end_time = datetime.fromisoformat(end_time_str) if end_time_str else None
 
-            if start_time and now < start_time:
-                st.warning(f"Exam has not started yet. Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                time_diff = start_time - now
-                st.metric("Time until start", str(time_diff).split('.')[0])
-                if st.button("Refresh Status"):
-                    st.rerun()
-                return
+        if start_time and now < start_time:
+            st.warning(f"Exam has not started yet. Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.metric("Time until start", str(start_time - now).split('.')[0])
+            if st.button("Refresh Status"):
+                st.rerun()
+            return
 
-            if end_time and now > end_time:
-                st.error("Exam has ended. You can no longer submit code.")
-                st.metric("Exam Ended", end_time.strftime('%Y-%m-%d %H:%M:%S'))
-                return
+        if end_time and now > end_time:
+            st.error("Exam has ended. You can no longer submit code.")
+            st.metric("Exam Ended", end_time.strftime('%Y-%m-%d %H:%M:%S'))
+            return
 
-            # EXAM IN PROGRESS
-            if end_time:
-                time_left = end_time - now
+    except Exception as e:
+        st.error(f"Error checking exam status: {e}")
+        return
 
-                st_room_id = st.session_state.room_id
-                st_student_id = st.session_state.student_id
+    # ================================================================
+    # BLOCKED STUDENT CHECK
+    # ================================================================
+    blocked_students = room.get("blocked_students", [])
+    student_id = st.session_state.student_id
+    my_flags = room.get("student_red_flags", {}).get(student_id, 0)
 
-                security_script = f"""
-                <script>
-                const targetWindow = window.parent;
-                const targetDocument = targetWindow.document;
+    if student_id in blocked_students or my_flags > 3:
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+            border: 3px solid #ef4444;
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            margin: 40px auto;
+            max-width: 700px;
+            box-shadow: 0 0 60px rgba(239, 68, 68, 0.4);
+        ">
+            <div style="font-size: 80px; margin-bottom: 20px;">🚫</div>
+            <h1 style="color: #ffffff; font-size: 42px; margin-bottom: 10px; font-weight: 800;">
+                EXAM ACCESS BLOCKED
+            </h1>
+            <p style="color: #fca5a5; font-size: 20px; margin-bottom: 30px;">
+                You have been permanently blocked from this exam due to <strong>repeated security violations</strong>.
+            </p>
+            <div style="
+                background: rgba(0,0,0,0.3);
+                border-radius: 12px;
+                padding: 20px;
+                margin: 20px auto;
+                max-width: 400px;
+            ">
+                <p style="color: #f87171; font-size: 28px; font-weight: 700; margin: 0;">
+                    Your Score: 0 / 100
+                </p>
+                <p style="color: #fca5a5; font-size: 16px; margin-top: 8px;">
+                    Violations recorded: """ + str(my_flags) + """
+                </p>
+            </div>
+            <p style="color: #d1d5db; font-size: 14px; margin-top: 20px;">
+                This action is final. Contact your teacher if you believe this is an error.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
 
-                function reportViolation() {{
-                    fetch("{PUBLIC_BACKEND_URL}/api/rooms/{st_room_id}/report_violation", {{
-                        method: "POST",
-                        headers: {{
-                            "Content-Type": "application/json"
-                        }},
-                        body: JSON.stringify({{
-                            "student_id": "{st_student_id}"
-                        }})
-                    }}).catch(e => console.error(e));
-                }}
+    # ================================================================
+    # SECURITY SCRIPT & EXAM HEADER
+    # ================================================================
+    if end_time:
+        time_left = end_time - now
 
-                function requestFullScreen() {{
-                    var elem = targetDocument.documentElement;
-                    if (elem.requestFullscreen) {{
-                        elem.requestFullscreen().catch(err => {{
-                            console.log("Error attempting to enable full-screen mode: " + err.message);
-                        }});
-                    }} else if (elem.webkitRequestFullscreen) {{
-                        elem.webkitRequestFullscreen();
-                    }} else if (elem.msRequestFullscreen) {{
-                        elem.msRequestFullscreen();
-                    }}
-                }}
+        st_room_id = st.session_state.room_id
+        st_student_id = st.session_state.student_id
 
-                function showOverlay(message, isRed = true) {{
+        security_script = f"""
+        <script>
+        const targetWindow = window.parent;
+        const targetDocument = targetWindow.document;
+
+        let violationCount = {my_flags};
+
+        function reportViolation() {{
+            violationCount++;
+            fetch("{PUBLIC_BACKEND_URL}/api/rooms/{st_room_id}/report_violation", {{
+                method: "POST",
+                headers: {{
+                    "Content-Type": "application/json"
+                }},
+                body: JSON.stringify({{
+                    "student_id": "{st_student_id}"
+                }})
+            }}).then(r => r.json()).then(data => {{
+                if (data.blocked) {{
+                    showOverlay('<h1 style="font-size: 60px;">🚫 BLOCKED</h1><h2 style="font-size: 30px;">You have been permanently blocked from this exam.</h2><p style="font-size: 22px;">Your score is now 0. Contact your teacher.</p>', true);
+                    // Disable click-to-dismiss for blocked overlay
                     var overlay = targetDocument.getElementById('security-overlay');
-                    if (!overlay) {{
-                        overlay = targetDocument.createElement('div');
-                        overlay.id = 'security-overlay';
-                        overlay.style.position = 'fixed';
-                        overlay.style.top = '0';
-                        overlay.style.left = '0';
-                        overlay.style.width = '100vw';
-                        overlay.style.height = '100vh';
-                        overlay.style.zIndex = '999999';
-                        overlay.style.color = 'white';
-                        overlay.style.display = 'flex';
-                        overlay.style.justifyContent = 'center';
-                        overlay.style.alignItems = 'center';
-                        overlay.style.flexDirection = 'column';
-
-                        overlay.onclick = function() {{
-                            overlay.style.display = 'none';
-                            targetDocument.title = "Online Exam IDE";
-                            requestFullScreen();
-                        }};
-
-                        targetDocument.body.appendChild(overlay);
-                    }}
-
-                    overlay.style.backgroundColor = isRed ? 'rgba(255, 0, 0, 0.98)' : 'rgba(0, 0, 0, 0.9)';
-                    overlay.innerHTML = message;
-                    overlay.style.display = 'flex';
+                    if (overlay) overlay.onclick = null;
+                    // Force reload after a short delay so the server-side block kicks in
+                    setTimeout(() => {{ targetWindow.location.reload(); }}, 3000);
                 }}
+            }}).catch(e => console.error(e));
+        }}
 
-                targetDocument.addEventListener('contextmenu', event => {{
-                    event.preventDefault();
-                    event.stopPropagation();
-                    reportViolation();
-                    showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Right-click is forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
-                    return false;
-                }}, true);
-
-                targetDocument.addEventListener('keydown', function(e) {{
-                    if (e.ctrlKey || e.altKey || e.metaKey) {{
-                        e.preventDefault();
-                        e.stopPropagation();
-                        reportViolation();
-                        showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Keyboard shortcuts are forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
-                        return false;
-                    }}
-                    if (e.keyCode >= 112 && e.keyCode <= 123) {{
-                         e.preventDefault();
-                         e.stopPropagation();
-                         reportViolation();
-                         showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Function keys are forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
-                         return false;
-                    }}
-                }}, true);
-
-                ['copy', 'cut', 'paste'].forEach(e => {{
-                    targetDocument.addEventListener(e, function(event) {{
-                        event.preventDefault();
-                        event.stopPropagation();
-                        reportViolation();
-                        let action = e.toUpperCase();
-                        showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">' + action + ' is forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
-                        return false;
-                    }}, true);
+        function requestFullScreen() {{
+            var elem = targetDocument.documentElement;
+            if (elem.requestFullscreen) {{
+                elem.requestFullscreen().catch(err => {{
+                    console.log("Error attempting to enable full-screen mode: " + err.message);
                 }});
+            }} else if (elem.webkitRequestFullscreen) {{
+                elem.webkitRequestFullscreen();
+            }} else if (elem.msRequestFullscreen) {{
+                elem.msRequestFullscreen();
+            }}
+        }}
 
-                targetWindow.addEventListener('blur', function() {{
-                   targetDocument.title = " EXAM WARNING: COME BACK!";
-                   reportViolation();
-                   showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">You left the exam window!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
-                }});
+        function showOverlay(message, isRed = true) {{
+            var overlay = targetDocument.getElementById('security-overlay');
+            if (!overlay) {{
+                overlay = targetDocument.createElement('div');
+                overlay.id = 'security-overlay';
+                overlay.style.position = 'fixed';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.width = '100vw';
+                overlay.style.height = '100vh';
+                overlay.style.zIndex = '999999';
+                overlay.style.color = 'white';
+                overlay.style.display = 'flex';
+                overlay.style.justifyContent = 'center';
+                overlay.style.alignItems = 'center';
+                overlay.style.flexDirection = 'column';
 
-                function handleFullscreenChange() {{
-                    if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
-                        reportViolation();
-                        showOverlay('<h1 style="font-size: 40px;"> FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
-                    }}
-                }}
+                overlay.onclick = function() {{
+                    overlay.style.display = 'none';
+                    targetDocument.title = "Online Exam IDE";
+                    requestFullScreen();
+                }};
 
-                targetDocument.addEventListener('fullscreenchange', handleFullscreenChange);
-                targetDocument.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-                targetDocument.addEventListener('mozfullscreenchange', handleFullscreenChange);
-                targetDocument.addEventListener('MSFullscreenChange', handleFullscreenChange);
+                targetDocument.body.appendChild(overlay);
+            }}
 
-                const style = targetDocument.createElement('style');
-                style.innerHTML = `
-                    [data-testid="stSidebar"] {{ display: none !important; }}
-                    [data-testid="stToolbar"] {{ visibility: hidden !important; }}
-                    header {{ visibility: hidden !important; }}
-                `;
-                targetDocument.head.appendChild(style);
+            overlay.style.backgroundColor = isRed ? 'rgba(255, 0, 0, 0.98)' : 'rgba(0, 0, 0, 0.9)';
+            overlay.innerHTML = message;
+            overlay.style.display = 'flex';
+        }}
 
-                setInterval(function() {{
-                     if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
-                         var overlay = targetDocument.getElementById('security-overlay');
-                         if (!overlay || overlay.style.display == 'none') {{
-                             showOverlay('<h1 style="font-size: 40px;"> FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
-                         }}
-                     }}
-                }}, 1000);
+        targetDocument.addEventListener('contextmenu', event => {{
+            event.preventDefault();
+            event.stopPropagation();
+            reportViolation();
+            showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Right-click is forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+            return false;
+        }}, true);
 
-                setTimeout(requestFullScreen, 500);
-                console.log("Security script loaded and attached to parent");
-                </script>
-                """
-                components.html(security_script, height=0, width=0)
+        targetDocument.addEventListener('keydown', function(e) {{
+            if (e.ctrlKey || e.altKey || e.metaKey) {{
+                e.preventDefault();
+                e.stopPropagation();
+                reportViolation();
+                showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Keyboard shortcuts are forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+                return false;
+            }}
+            if (e.keyCode >= 112 && e.keyCode <= 123) {{
+                 e.preventDefault();
+                 e.stopPropagation();
+                 reportViolation();
+                 showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">Function keys are forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+                 return false;
+            }}
+        }}, true);
 
-                # Top bar
-                col1, col2, col3 = st.columns([1, 1, 1])
-                with col1:
-                    st.metric("⏱ Time Remaining", str(time_left).split('.')[0])
-                with col3:
-                    st.markdown("""
-                    <button onclick="parent.document.documentElement.requestFullscreen()" style="
-                        background-color: #FF4B4B; 
-                        color: white; 
-                        padding: 10px 20px; 
-                        border: none; 
-                        border-radius: 5px; 
-                        cursor: pointer;
-                        font-weight: bold;">
-                        Force Full Screen
-                    </button>
-                    """, unsafe_allow_html=True)
+        ['copy', 'cut', 'paste'].forEach(e => {{
+            targetDocument.addEventListener(e, function(event) {{
+                event.preventDefault();
+                event.stopPropagation();
+                reportViolation();
+                let action = e.toUpperCase();
+                showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">' + action + ' is forbidden!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+                return false;
+            }}, true);
+        }});
 
-                if st.button("Refresh Timer"):
-                    st.rerun()
+        targetWindow.addEventListener('blur', function() {{
+           targetDocument.title = " EXAM WARNING: COME BACK!";
+           reportViolation();
+           showOverlay('<h1 style="font-size: 50px;"> VIOLATION</h1><h2 style="font-size: 30px;">You left the exam window!</h2><p style="font-size: 20px;">Return and CLICK HERE to resume.</p>');
+        }});
 
-        except Exception as e:
-            st.error(f"Error checking exam status: {e}")
+        function handleFullscreenChange() {{
+            if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
+                reportViolation();
+                showOverlay('<h1 style="font-size: 40px;"> FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
+            }}
+        }}
+
+        targetDocument.addEventListener('fullscreenchange', handleFullscreenChange);
+        targetDocument.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        targetDocument.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        targetDocument.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+        const style = targetDocument.createElement('style');
+        style.innerHTML = `
+            [data-testid="stSidebar"] {{ display: none !important; }}
+            [data-testid="stToolbar"] {{ visibility: hidden !important; }}
+            header {{ visibility: hidden !important; }}
+        `;
+        targetDocument.head.appendChild(style);
+
+        setInterval(function() {{
+             if (!targetDocument.fullscreenElement && !targetDocument.webkitFullscreenElement && !targetDocument.msFullscreenElement) {{
+                 var overlay = targetDocument.getElementById('security-overlay');
+                 if (!overlay || overlay.style.display == 'none') {{
+                     showOverlay('<h1 style="font-size: 40px;"> FULLSCREEN REQUIRED</h1><h2 style="font-size: 25px;">You cannot leave fullscreen mode.</h2><p style="font-size: 20px;">CLICK HERE to return to fullscreen.</p>', true);
+                 }}
+             }}
+        }}, 1000);
+
+        setTimeout(requestFullScreen, 500);
+        console.log("Security script loaded and attached to parent");
+        </script>
+        """
+        components.html(security_script, height=0, width=0)
 
         # ================================================================
-        # QUESTION + TEST CASES DISPLAY + CODE EDITOR
+        # TOP BAR: Timer + Violations + Fullscreen
         # ================================================================
-        try:
-            questions = api_client.get_questions(st.session_state.room_id)
-            question_list = questions.get("questions", [])
+        top_col1, top_col2, top_col3, top_col4 = st.columns([2, 1, 1, 1])
+        with top_col1:
+            st.markdown(f"**💻 {st.session_state.student_name}** — *{room.get('room_name', 'Exam')}*")
+        with top_col2:
+            st.metric("⏱ Time Left", str(time_left).split('.')[0])
+        with top_col3:
+            violation_color = "🔴" if my_flags > 0 else "🟢"
+            st.metric(f"{violation_color} Violations", f"{my_flags} / 3")
+        with top_col4:
+            st.markdown("""
+            <button onclick="parent.document.documentElement.requestFullscreen()" style="
+                background-color: #FF4B4B; 
+                color: white; 
+                padding: 8px 16px; 
+                border: none; 
+                border-radius: 5px; 
+                cursor: pointer;
+                font-weight: bold;
+                font-size: 13px;">
+                🖥️ Fullscreen
+            </button>
+            """, unsafe_allow_html=True)
 
-            if question_list:
-                # Question selection
-                question_names = [q.get("question_text", f"Question {i + 1}")[:60] for i, q in enumerate(question_list)]
-                selected_q_idx = st.selectbox("Select Question", range(len(question_names)),
-                                              format_func=lambda i: question_names[i])
-                selected_question = question_list[selected_q_idx]
-                question_id = selected_question.get("question_id")
+        if st.button("🔄 Refresh", key="refresh_timer"):
+            st.rerun()
 
-                # Display question text
+    # ================================================================
+    # QUESTION + SPLIT-PANE IDE LAYOUT
+    # ================================================================
+    try:
+        questions = api_client.get_questions(st.session_state.room_id)
+        question_list = questions.get("questions", [])
+
+        if not question_list:
+            st.info("No questions available yet. Ask your teacher to create some!")
+            return
+
+        # Question tab selector (like LeetCode problem tabs)
+        question_names = [f"Q{i+1}: {q.get('question_text', 'Question')[:50]}..." for i, q in enumerate(question_list)]
+        selected_q_idx = st.selectbox("📋 Select Problem", range(len(question_names)),
+                                      format_func=lambda i: question_names[i], label_visibility="collapsed")
+        selected_question = question_list[selected_q_idx]
+        question_id = selected_question.get("question_id")
+        language = selected_question.get("language", "Python").lower()
+
+        st.markdown("---")
+
+        # ================================================================
+        # SPLIT PANE: LEFT (Problem) | RIGHT (Code Editor)
+        # ================================================================
+        left_col, right_col = st.columns([1, 1], gap="medium")
+
+        # ========================
+        # LEFT PANEL: Problem
+        # ========================
+        with left_col:
+            st.markdown("### 📝 Problem Statement")
+            st.markdown(f"""
+            <div style="
+                background: rgba(30, 36, 46, 0.6);
+                border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 16px;
+                line-height: 1.7;
+            ">
+                {selected_question['question_text']}
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Example Test Cases
+            example_test_cases = selected_question.get("test_cases", [])
+            hidden_count = selected_question.get("hidden_test_cases_count", 0)
+
+            if example_test_cases or hidden_count > 0:
+                st.markdown("### 🧪 Test Cases")
+
+                if example_test_cases:
+                    for j, tc in enumerate(example_test_cases):
+                        st.markdown(f"**Example {j+1}:**")
+                        tc_left, tc_right = st.columns(2)
+                        with tc_left:
+                            input_display = tc.get("input_data", "(no input)")
+                            st.code(input_display if input_display else "(no input)", language="text")
+                        with tc_right:
+                            st.code(tc.get("expected_output", ""), language="text")
+
+                if hidden_count > 0:
+                    st.info(f"🔒 **{hidden_count}** hidden test case(s) will be used for final judging.")
+
+            # ================================================================
+            # SUBMISSION RESULTS (shown in left panel, like LeetCode)
+            # ================================================================
+            if "last_submission" in st.session_state and st.session_state.last_submission:
+                submission = st.session_state.last_submission
+
                 st.markdown("---")
-                st.subheader("📝 Problem Statement")
-                st.write(f"**{selected_question['question_text']}**")
-                
-                language = selected_question.get("language", "Python").lower()
+                st.markdown("### 📊 Submission Results")
 
-                # ================================================================
-                # DISPLAY EXAMPLE TEST CASES (visible to students)
-                # ================================================================
-                example_test_cases = selected_question.get("test_cases", [])
-                hidden_count = selected_question.get("hidden_test_cases_count", 0)
-                total_count = selected_question.get("total_test_cases", 0)
+                overall = submission.get("overall", "Unknown")
+                passed = submission.get("passed_cases", 0)
+                total = submission.get("total_cases", 0)
+                score = submission.get("score", 0)
+                max_score = submission.get("max_score", 100)
 
-                if example_test_cases or hidden_count > 0:
-                    st.markdown("---")
-                    st.subheader("🧪 Test Cases")
-                    
-                    if example_test_cases:
-                        st.write("**Example Test Cases** (visible to you):")
-                        for j, tc in enumerate(example_test_cases):
-                            with st.container():
-                                col_in, col_out = st.columns(2)
-                                with col_in:
-                                    st.markdown(f"**Input {j+1}:**")
-                                    input_display = tc.get("input_data", "(no input)")
-                                    st.code(input_display if input_display else "(no input)", language="text")
-                                with col_out:
-                                    st.markdown(f"**Expected Output {j+1}:**")
-                                    st.code(tc.get("expected_output", ""), language="text")
-                    
-                    if hidden_count > 0:
-                        st.info(f"🔒 **{hidden_count}** hidden test case(s) will be used for final judging.")
+                # Verdict banner
+                if overall == "Accepted":
+                    st.success(f"🎉 **{overall}** — All {total} test case(s) passed! Score: **{score:.0f}/{max_score:.0f}**")
+                elif overall == "Wrong Answer":
+                    st.error(f"❌ **{overall}** — {passed}/{total} passed. Score: **{score:.0f}/{max_score:.0f}**")
+                elif overall == "Runtime Error":
+                    st.error(f"💥 **{overall}** — {passed}/{total} passed. Score: **{score:.0f}/{max_score:.0f}**")
+                else:
+                    st.warning(f"⚠️ **{overall}** — {passed}/{total} passed. Score: **{score:.0f}/{max_score:.0f}**")
 
-                # ================================================================
-                # CODE TEMPLATES
-                # ================================================================
-                st.divider()
-                st.subheader("📋 Code Templates")
+                # Per-case results
+                case_results = submission.get("results", [])
+                for cr in case_results:
+                    case_num = cr.get("case_number", "?")
+                    is_hidden = cr.get("is_hidden", False)
+                    case_passed = cr.get("passed", False)
+                    case_status = cr.get("status", "")
 
+                    icon = "✅" if case_passed else "❌"
+
+                    if is_hidden:
+                        st.write(f"{icon} **Hidden Test Case {case_num}**: {case_status}")
+                    else:
+                        with st.expander(f"{icon} Test Case {case_num}: {case_status}", expanded=not case_passed):
+                            tc_col1, tc_col2, tc_col3 = st.columns(3)
+                            with tc_col1:
+                                st.markdown("**Input:**")
+                                st.code(cr.get("input_data", "(no input)"), language="text")
+                            with tc_col2:
+                                st.markdown("**Expected:**")
+                                st.code(cr.get("expected_output", ""), language="text")
+                            with tc_col3:
+                                st.markdown("**Your Output:**")
+                                actual = cr.get("actual_output", "")
+                                if cr.get("error"):
+                                    st.code(cr.get("error", ""), language="text")
+                                else:
+                                    st.code(actual if actual else "(no output)", language="text")
+
+        # ========================
+        # RIGHT PANEL: Code Editor
+        # ========================
+        with right_col:
+            # Language badge
+            lang_icons = {"python": "🐍", "javascript": "🟨", "java": "☕", "c++": "⚙️"}
+            lang_icon = lang_icons.get(language, "📄")
+            st.markdown(f"### {lang_icon} Code Editor — `{language.upper()}`")
+
+            # Template selector
+            with st.expander("📋 Templates & Help", expanded=False):
                 if language in ["python", "py"]:
                     templates = PYTHON_TEMPLATES
                 else:
@@ -991,233 +1136,114 @@ def student_page(api_client):
                             question_id
                         )
                         api_client.save_code(worksheet["worksheet_id"], st.session_state.code)
-                        st.success("Template loaded and saved!")
                     except:
-                        st.success("Template loaded!")
+                        pass
                     st.rerun()
 
-                # Indentation help
-                with st.expander("📐 Indentation Help"):
-                    if language in ["python", "py"]:
-                        st.write("""
-                        **Python Indentation Rules:**
-                        - Use **4 spaces** per indentation level
-                        - Consistent indentation is required
-                        - Common places for indentation:
-                          - Inside functions: 4 spaces
-                          - Inside loops (for, while): 4 spaces
-                          - Inside if/else blocks: 4 spaces
-                          - Class methods: 8 spaces from class definition
+            # Initialize code
+            if "code" not in st.session_state:
+                st.session_state.code = ""
 
-                        **Example:**
-                        ```python
-                        def greet(name):      # No indentation
-                            print(name)       # 4 spaces
-                            if name:          # 4 spaces
-                                print("Hi")   # 8 spaces
-                        ```
-                        """)
-                    else:
-                        st.write("""
-                        **JavaScript Indentation Rules:**
-                        - Use **2 spaces** per indentation level
-                        - Common places for indentation:
-                          - Inside functions: 2 spaces
-                          - Inside loops (for, while): 2 spaces
-                          - Inside if/else blocks: 2 spaces
-                          - Inside objects: 2 spaces
+            # Initialize worksheet
+            if "current_worksheet_id" not in st.session_state or st.session_state.get(
+                    "current_question_id") != question_id:
+                try:
+                    worksheet = api_client.get_worksheet(
+                        st.session_state.room_id,
+                        st.session_state.student_id,
+                        question_id
+                    )
+                    st.session_state.current_worksheet_id = worksheet["worksheet_id"]
+                    st.session_state.current_question_id = question_id
+                    if worksheet.get("code"):
+                        st.session_state.code = worksheet["code"]
+                except Exception as e:
+                    st.error(f"Error loading worksheet: {e}")
 
-                        **Example:**
-                        ```javascript
-                        function greet(name) {    // No indentation
-                          console.log(name);      // 2 spaces
-                          if (name) {             // 2 spaces
-                            console.log("Hi");    // 4 spaces
-                          }
-                        }
-                        ```
-                        """)
+            # Code editor
+            code_input = st.text_area(
+                "Write your code here:",
+                value=st.session_state.code,
+                height=350,
+                key="code_input",
+                label_visibility="collapsed"
+            )
 
-                # ================================================================
-                # CODE EDITOR
-                # ================================================================
-                st.divider()
-                st.subheader("⌨️ Code Editor")
-
-                if "code" not in st.session_state:
-                    st.session_state.code = ""
-
-                # Initialize worksheet
-                if "current_worksheet_id" not in st.session_state or st.session_state.get(
-                        "current_question_id") != question_id:
+            # Auto-save
+            if code_input != st.session_state.code:
+                st.session_state.code = code_input
+                if "current_worksheet_id" in st.session_state:
                     try:
-                        worksheet = api_client.get_worksheet(
-                            st.session_state.room_id,
-                            st.session_state.student_id,
-                            question_id
-                        )
-                        st.session_state.current_worksheet_id = worksheet["worksheet_id"]
-                        st.session_state.current_question_id = question_id
-                        if worksheet.get("code"):
-                            st.session_state.code = worksheet["code"]
-                    except Exception as e:
-                        st.error(f"Error loading worksheet: {e}")
+                        api_client.save_code(st.session_state.current_worksheet_id, code_input)
+                    except:
+                        pass
 
-                code_input = st.text_area(
-                    "Write your code here:",
-                    value=st.session_state.code,
-                    height=250,
-                    key="code_input"
-                )
+            # Code quality indicators
+            if code_input.strip():
+                q_col1, q_col2, q_col3 = st.columns(3)
 
-                # Auto-save
-                if code_input != st.session_state.code:
-                    st.session_state.code = code_input
+                has_output = False
+                if language in ["python", "py"]:
+                    has_output = "print(" in code_input
+                else:
+                    has_output = "console.log(" in code_input
+
+                with q_col1:
+                    if has_output:
+                        st.success("✅ Output")
+                    else:
+                        st.warning("⚠️ No Output")
+                with q_col2:
+                    st.info(f"📝 {len(code_input)} chars")
+                with q_col3:
+                    st.info(f"📄 {len(code_input.splitlines())} lines")
+
+            # ================================================================
+            # ACTION BUTTONS: Run | Submit | Save
+            # ================================================================
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
+
+            with btn_col1:
+                if st.button("▶️ Run Code", use_container_width=True):
+                    if code_input.strip():
+                        with st.spinner("Executing..."):
+                            result = api_client.execute_code(code_input, language)
+                        if "output" in result and result.get("success", True):
+                            st.success("✅ Execution successful!")
+                            st.code(result["output"], language="text")
+                        elif "error" in result:
+                            st.error("❌ Execution failed!")
+                            st.code(result["error"], language="text")
+                    else:
+                        st.warning("Write some code first!")
+
+            with btn_col2:
+                if st.button("🚀 Submit", use_container_width=True, type="primary"):
+                    if code_input.strip():
+                        with st.spinner("Judging against all test cases..."):
+                            result = api_client.submit_solution(
+                                code=code_input,
+                                language=language,
+                                room_id=st.session_state.room_id,
+                                question_id=question_id,
+                                student_id=st.session_state.student_id
+                            )
+                        st.session_state.last_submission = result
+                        st.rerun()
+                    else:
+                        st.warning("Write some code first!")
+
+            with btn_col3:
+                if st.button("💾 Save", use_container_width=True):
                     if "current_worksheet_id" in st.session_state:
                         try:
                             api_client.save_code(st.session_state.current_worksheet_id, code_input)
-                        except:
-                            pass
+                            st.success("✅ Saved!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
-                # ================================================================
-                # CODE QUALITY CHECK
-                # ================================================================
-                st.divider()
-                st.subheader("📊 Code Quality Check")
-
-                if code_input.strip():
-                    col1, col2, col3 = st.columns(3)
-
-                    has_output = False
-                    if language in ["python", "py"]:
-                        has_output = "print(" in code_input
-                    else:
-                        has_output = "console.log(" in code_input
-
-                    with col1:
-                        if has_output:
-                            st.success(f"✅ Has Output Statement")
-                        else:
-                            st.warning(f"⚠️ No Output Statement")
-
-                    char_count = len(code_input)
-                    with col2:
-                        st.info(f"📝 Characters: {char_count}")
-
-                    lines = code_input.split('\n')
-                    with col3:
-                        st.info(f"📄 Lines: {len(lines)}")
-
-                # ================================================================
-                # RUN & SUBMIT BUTTONS
-                # ================================================================
-                st.divider()
-                col_run, col_submit, col_save = st.columns(3)
-
-                with col_run:
-                    if st.button("▶️ Run Code", use_container_width=True):
-                        if code_input.strip():
-                            with st.spinner("Executing..."):
-                                result = api_client.execute_code(code_input, language)
-                            if "output" in result and result.get("success", True):
-                                st.success("✅ Execution successful!")
-                                st.code(result["output"], language="text")
-                            elif "error" in result:
-                                st.error("❌ Execution failed!")
-                                st.code(result["error"], language="text")
-                        else:
-                            st.warning("Write some code first!")
-
-                with col_submit:
-                    if st.button("🚀 Submit Solution", use_container_width=True, type="primary"):
-                        if code_input.strip():
-                            with st.spinner("Judging your solution against all test cases..."):
-                                result = api_client.submit_solution(
-                                    code=code_input,
-                                    language=language,
-                                    room_id=st.session_state.room_id,
-                                    question_id=question_id,
-                                    student_id=st.session_state.student_id
-                                )
-                            
-                            # Store result for display
-                            st.session_state.last_submission = result
-                        else:
-                            st.warning("Write some code first!")
-
-                with col_save:
-                    if st.button("💾 Save Code", use_container_width=True):
-                        if "current_worksheet_id" in st.session_state:
-                            try:
-                                api_client.save_code(st.session_state.current_worksheet_id, code_input)
-                                st.success("✅ Code saved!")
-                            except Exception as e:
-                                st.error(f"Error saving: {e}")
-
-                # ================================================================
-                # SUBMISSION RESULTS DISPLAY (LeetCode-style)
-                # ================================================================
-                if "last_submission" in st.session_state and st.session_state.last_submission:
-                    submission = st.session_state.last_submission
-                    
-                    st.markdown("---")
-                    st.subheader("📊 Submission Results")
-                    
-                    overall = submission.get("overall", "Unknown")
-                    passed = submission.get("passed_cases", 0)
-                    total = submission.get("total_cases", 0)
-                    score = submission.get("score", 0)
-                    max_score = submission.get("max_score", 100)
-                    
-                    # Overall verdict banner with score
-                    if overall == "Accepted":
-                        st.success(f"🎉 **{overall}** — All {total} test case(s) passed! Score: **{score:.0f}/{max_score:.0f}**")
-                    elif overall == "Wrong Answer":
-                        st.error(f"❌ **{overall}** — {passed}/{total} test case(s) passed. Score: **{score:.0f}/{max_score:.0f}**")
-                    elif overall == "Runtime Error":
-                        st.error(f"💥 **{overall}** — {passed}/{total} test case(s) passed. Score: **{score:.0f}/{max_score:.0f}**")
-                    else:
-                        st.warning(f"⚠️ **{overall}** — {passed}/{total} test case(s) passed. Score: **{score:.0f}/{max_score:.0f}**")
-                    
-                    # Per-case results
-                    case_results = submission.get("results", [])
-                    for cr in case_results:
-                        case_num = cr.get("case_number", "?")
-                        is_hidden = cr.get("is_hidden", False)
-                        case_passed = cr.get("passed", False)
-                        case_status = cr.get("status", "")
-                        
-                        icon = "✅" if case_passed else "❌"
-                        
-                        if is_hidden:
-                            # Hidden test case — only show pass/fail
-                            st.write(f"{icon} **Hidden Test Case {case_num}**: {case_status}")
-                        else:
-                            # Example test case — show full details
-                            with st.expander(f"{icon} Test Case {case_num}: {case_status}", expanded=not case_passed):
-                                tc_col1, tc_col2, tc_col3 = st.columns(3)
-                                with tc_col1:
-                                    st.markdown("**Input:**")
-                                    st.code(cr.get("input_data", "(no input)"), language="text")
-                                with tc_col2:
-                                    st.markdown("**Expected Output:**")
-                                    st.code(cr.get("expected_output", ""), language="text")
-                                with tc_col3:
-                                    st.markdown("**Your Output:**")
-                                    actual = cr.get("actual_output", "")
-                                    if cr.get("error"):
-                                        st.code(cr.get("error", ""), language="text")
-                                    else:
-                                        st.code(actual if actual else "(no output)", language="text")
-
-            else:
-                st.info("No questions available yet. Ask your teacher to create some!")
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-    else:
-        st.info("📌 Join a room using the sidebar to get started!")
+    except Exception as e:
+        st.error(f"Error: {e}")
 
 
 # ============================================================================
