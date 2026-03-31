@@ -285,7 +285,7 @@ def teacher_page(api_client):
         # Duration and Start Time
         duration = st.slider("Duration (minutes)", 5, 180, 60, step=5)
 
-        start_option = st.radio("Start Time", ["Start Now", "Schedule for Later"])
+        start_option = st.radio("Start Time", ["Start in 10 Mins (Prep Time)", "Schedule for Later"])
         start_time_iso = None
 
         if start_option == "Schedule for Later":
@@ -295,7 +295,8 @@ def teacher_page(api_client):
                 start_dt = datetime.combine(exam_date, exam_time)
                 start_time_iso = start_dt.isoformat()
         else:
-            start_time_iso = datetime.now().isoformat()
+            start_time_iso = (datetime.now() + timedelta(minutes=10)).isoformat()
+            st.caption("⏳ Gives you 10 minutes to enter questions while students wait in the lobby.")
 
         if st.button("Create Exam Room", key="create_room"):
             if room_name and teacher_name:

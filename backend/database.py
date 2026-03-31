@@ -103,14 +103,14 @@ class Database:
                 await self.expire_room(room["room_id"])
             return {"error": "expired", "detail": "This exam has ended. Room code is no longer valid."}
 
-        # Security: reject joins if exam has already started
+        # Security: reject joins if exam has already started (with 5 min grace period)
         start_time_str = room.get("start_time")
         if start_time_str:
             try:
                 start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
                 now = datetime.now(start_dt.tzinfo) if start_dt.tzinfo else datetime.now()
-                if now > start_dt:
-                    return {"error": "started", "detail": "Exam has already started. Late entries are not allowed."}
+                if now > start_dt + timedelta(minutes=5):
+                    return {"error": "started", "detail": "Exam started over 5 minutes ago. Late entries are not allowed."}
             except Exception:
                 pass
 
