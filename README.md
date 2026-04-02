@@ -55,7 +55,7 @@ graph TD
     %% Backend internal connections
     FastAPI <-->|motor async| Mongo
     FastAPI -->|/api/execute\n/api/submit| Exec
-    FastAPI -->|/api/rooms/{id}/report| PDF
+    FastAPI -->|/api/rooms/:id/report| PDF
 ```
 
 ### 📡 Detailed Component & API Flow
