@@ -19,6 +19,38 @@ A modern, Dockerized platform for conducting secure online coding exams. Built w
 - **Live Execution**: Run code against example test cases before submitting.
 - **Auto-Judge**: Submit solutions to be evaluated against all test cases, with immediate feedback and scoring.
 
+## 🏛️ System Architecture
+
+The application is designed using a decoupled client-server architecture, tailored specifically for easy containerized deployments locally or in the cloud.
+
+### 1. Unified Proxy Routing (Nginx)
+In production and single-container deployments (like Railway or Hugging Face Spaces), an **Nginx** reverse proxy dynamically routes incoming traffic on a unified port:
+- `/api/*` requests are forwarded securely to the FastAPI backend.
+- `/_stcore/stream` (WebSockets) and static assets are intelligently routed to the Streamlit frontend.
+
+### 2. Frontend Layer (Streamlit)
+The user interface is built entirely using **Streamlit**, serving as the client application.
+- **State Management**: Maintains distinct session states for each connected user (Student/Teacher).
+- **Live Collaboration Feel**: Leverages automated polling loops and streamlined UI components to visually simulate real-time live monitoring and active tab-switching detections without over-architecting WebSockets at the logic level.
+- **API Driven**: Every action (from fetching the waiting lobby status to submitting code) triggers an external REST HTTP request to the backend.
+
+### 3. Backend REST API (FastAPI)
+The core engine governing exam rules, state synchronization, and validations. Built with **FastAPI**.
+- **Stateless Endpoints**: Fully RESTful, allowing horizontal scalability.
+- **Asynchronous I/O**: Communicates with MongoDB using the `motor` async driver, ensuring high throughput for continuous code-saving pings from dozens of students concurrently.
+- **Report Generator**: Integrates with `ReportLab` to stitch together structured analytical data from MongoDB into binary PDF payloads streamed out securely upon request.
+
+### 4. Database Layer (MongoDB Atlas)
+A NoSQL format flawlessly maps the shifting hierarchical structures of classroom data:
+- **Rooms**: The master document holding timers, states, test cases, global configurations, and violation maps (tab-switch tracking integers mapped by `student_id`).
+- **Worksheets**: The atom of student progress. A composite key of `(room_id, student_id, question_id)` determines a worksheet. It serves as an auto-saving buffer storing the active code string, its chosen language, and arrays of scored `submission_results`.
+
+### 5. Multi-Language Code Execution Engine
+An isolated, native evaluation playground contained directly inside the backend docker image securely evaluates untrusted code.
+- **Local Sandboxing**: Converts incoming request blocks into localized `/tmp` directory source files.
+- **Compiler/Interpreter Chains**: Routes files to natively installed tools (`python`, `node`, `javac/java`, `g++`).
+- **Defensive Guardrails**: Enforces strict `subprocess` timeout thresholds (usually 10s) to kill runaway logic and `while(true)` blocks cleanly, capturing `stdout` and `stderr` exclusively for precise grading against hidden assertions.
+
 ## 🛠️ Technology Stack
 - **Frontend**: [Streamlit](https://streamlit.io/) + Custom HTML/CSS/JS components
 - **Backend**: [FastAPI](https://fastapi.tiangolo.com/) (Python)
