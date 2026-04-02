@@ -21,35 +21,76 @@ A modern, Dockerized platform for conducting secure online coding exams. Built w
 
 ## 🏛️ System Architecture
 
-The application is designed using a decoupled client-server architecture, tailored specifically for easy containerized deployments locally or in the cloud.
+The application uses a decoupled client-server architecture, tailored for easy containerized deployments locally or in the cloud.
 
-### 1. Unified Proxy Routing (Nginx)
-In production and single-container deployments (like Railway or Hugging Face Spaces), an **Nginx** reverse proxy dynamically routes incoming traffic on a unified port:
-- `/api/*` requests are forwarded securely to the FastAPI backend.
-- `/_stcore/stream` (WebSockets) and static assets are intelligently routed to the Streamlit frontend.
+### 🏗️ Architecture Diagram
+```mermaid
+graph TD
+    %% Define User Roles
+    Teacher([👩‍🏫 Teacher])
+    Student([👨‍🎓 Student])
 
-### 2. Frontend Layer (Streamlit)
-The user interface is built entirely using **Streamlit**, serving as the client application.
-- **State Management**: Maintains distinct session states for each connected user (Student/Teacher).
-- **Live Collaboration Feel**: Leverages automated polling loops and streamlined UI components to visually simulate real-time live monitoring and active tab-switching detections without over-architecting WebSockets at the logic level.
-- **API Driven**: Every action (from fetching the waiting lobby status to submitting code) triggers an external REST HTTP request to the backend.
+    %% Defines Proxies & UIs
+    subgraph Container/Host
+        Nginx{Nginx Reverse Proxy\nPort: 7860}
+        Streamlit[💻 Streamlit Frontend\nPort: 8501]
+        FastAPI[⚙️ FastAPI Backend\nPort: 8000]
+        Exec[🛑 Code Execution Engine\nLocal Subprocesses]
+        PDF[📄 ReportLab Component]
+    end
 
-### 3. Backend REST API (FastAPI)
-The core engine governing exam rules, state synchronization, and validations. Built with **FastAPI**.
-- **Stateless Endpoints**: Fully RESTful, allowing horizontal scalability.
-- **Asynchronous I/O**: Communicates with MongoDB using the `motor` async driver, ensuring high throughput for continuous code-saving pings from dozens of students concurrently.
-- **Report Generator**: Integrates with `ReportLab` to stitch together structured analytical data from MongoDB into binary PDF payloads streamed out securely upon request.
+    %% External Services
+    Mongo[(🍃 MongoDB Atlas)]
 
-### 4. Database Layer (MongoDB Atlas)
+    %% Routing Flow
+    Teacher --> |HTTP/WS| Nginx
+    Student --> |HTTP/WS| Nginx
+    
+    Nginx -->|/api/*| FastAPI
+    Nginx -->|/*, /_stcore| Streamlit
+    
+    %% API Calls from Frontend to Backend
+    Streamlit -- REST API Calls --> FastAPI
+
+    %% Backend internal connections
+    FastAPI <-->|motor async| Mongo
+    FastAPI -->|/api/execute\n/api/submit| Exec
+    FastAPI -->|/api/rooms/{id}/report| PDF
+```
+
+### 📡 Detailed Component & API Flow
+
+#### 1. Unified Proxy Routing (Nginx)
+In single-container deployments (like Railway or Hugging Face Spaces), an **Nginx** reverse proxy dynamically routes incoming traffic on a unified port:
+- `/api/*` requests bypass the UI and map directly to the FastAPI backend.
+- `/_stcore/stream` (WebSockets) and static assets are routed to the Streamlit frontend.
+
+#### 2. Frontend Layer (Streamlit)
+The user interface is built using **Streamlit**. Every user action triggers a synchronous `requests` call to the Backend API.
+- **Teacher Workflow**:
+  - `POST /api/rooms/create`: Submits form data to initialize a new exam room.
+  - `POST /api/rooms/{room_id}/questions`: Adds new questions along with visible/hidden test cases.
+  - `GET /api/rooms/{room_id}/student-codes`: Continuously polled by the Live Monitor to fetch real-time student code progress.
+  - `GET /api/rooms/{room_id}/report`: Triggers PDF report generation when the exam is concluded.
+- **Student Workflow**:
+  - `POST /api/rooms/{room_code}/join`: Validates room code and grants access to the Waiting Lobby or IDE.
+  - `POST /api/worksheets/{worksheet_id}/save`: Auto-saves the student's code to the backend repeatedly as they type.
+  - `POST /api/rooms/{room_id}/report_violation`: Automatically triggered via JS events if a student switches tabs, incrementing their "red flags".
+
+#### 3. Backend REST API (FastAPI)
+The core engine governing exam rules, built with **FastAPI**.
+- **Stateless & Async**: Exposes RESTful endpoints and uses the `motor` async driver to handle high throughput, such as dozens of students simultaneously auto-saving code.
+- **API Endpoints (`main.py`)**: Includes routes for room management (`/api/rooms/*`), question handling, worksheet syncing (`/api/worksheets/*`), and execution payloads.
+
+#### 4. Database Layer (MongoDB Atlas)
 A NoSQL format flawlessly maps the shifting hierarchical structures of classroom data:
-- **Rooms**: The master document holding timers, states, test cases, global configurations, and violation maps (tab-switch tracking integers mapped by `student_id`).
-- **Worksheets**: The atom of student progress. A composite key of `(room_id, student_id, question_id)` determines a worksheet. It serves as an auto-saving buffer storing the active code string, its chosen language, and arrays of scored `submission_results`.
+- **`rooms`**: The master document holding timers, states, test cases, and violation maps (tab-switch tracking integers mapped by `student_id`).
+- **`worksheets`**: The atom of student progress. A composite key of `(room_id, student_id, question_id)` determines a worksheet. It stores the active code string, language chosen, and the array of scored `submission_results`.
 
-### 5. Multi-Language Code Execution Engine
-An isolated, native evaluation playground contained directly inside the backend docker image securely evaluates untrusted code.
-- **Local Sandboxing**: Converts incoming request blocks into localized `/tmp` directory source files.
-- **Compiler/Interpreter Chains**: Routes files to natively installed tools (`python`, `node`, `javac/java`, `g++`).
-- **Defensive Guardrails**: Enforces strict `subprocess` timeout thresholds (usually 10s) to kill runaway logic and `while(true)` blocks cleanly, capturing `stdout` and `stderr` exclusively for precise grading against hidden assertions.
+#### 5. Multi-Language Code Execution Engine
+An isolated evaluation playground natively contained inside the backend docker image.
+- **Live Run (`POST /api/execute`)**: Converts student code to localized `/tmp` files, invoking native tools (`python`, `node`, `javac`, `g++`) to run freeform tests.
+- **Auto-Judge (`POST /api/submit`)**: Pipes the exact `stdin` from hidden and visible test cases into the subprocess. It enforces strict `subprocess` timeout thresholds (e.g., 10s) to kill runaway logic natively, matching `stdout`/`stderr` against expected outputs to assign automated grades.
 
 ## 🛠️ Technology Stack
 - **Frontend**: [Streamlit](https://streamlit.io/) + Custom HTML/CSS/JS components
